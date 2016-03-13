@@ -1,0 +1,173 @@
+###Classifying the quality of a bicep curl using Random Forests
+ 
+**By: James Turrin** 
+ 
+**Executive Summary**  
+Body motion data collected by wearable media while performing a bicep curl are
+analyzed in an attempt to classify the quality of the exercise. Six participants 
+performed bicep curls with dumbbells in five different fashions: (A) perfectly, 
+(B) throwing the elbows to the front, (C) lifting the dumbbell only half way, 
+(D) lowering the dumbbell only halfway, and (E) throwing the hips to the front. 
+The wearable media were located on the participants' arm, forearm, waist, and dumbbell. 
+The data consist of 19,622 observations of 160 variables and are classified using 
+a random forest. The accuracy of the model, when applied to a validation set,
+is 96%. 
+
+**Credit for the data**  
+The data is made available at http://groupware.les.inf.puc-rio.br/har, and have been
+published as follows: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H.
+Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th
+International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart,
+Germany: ACM SIGCHI, 2013.
+
+###Classify the data
+
+To classify the data two methods were explored, Random Forest and Boosting with 
+decision trees. These two were chosen due to their noted ability to properly classify
+complex data. However, Boosting was not successful due to memory allocation problems,
+leaving Random Forest as the final model. The Random Forest was implemented using the
+caret package, which includes bootstrap resampling (25 times) across the 'mtry'
+tuning parameter. The data set is made tidy by removing many unnecessary variables, and
+variables that contain all NAs. The data set is further reduced using PCA. This reduces
+the number of variables to 20 while retaining 90% of the variability of the original data.
+By reducing the number of variables, the amount of time and memory required to train the
+model is also reduced. The final model chosen has the 'mtry' parameter with the highest
+accuracy, ~95%. The model was then cross-validated by applying it to a validation set to
+estimate its out-of-sample accuracy, resulting in a 96% success rate.
+
+**Obtain the data**
+```{r warning=FALSE,message=FALSE}
+# setwd("./PracticalMachineLearning")
+
+trainurl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testurl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(trainurl,destfile="pml-training.csv")
+download.file(testurl,destfile="pml-testing.csv")
+
+training<-read.csv("pml-training.csv",stringsAsFactors = F)
+testing<-read.csv("pml-testing.csv",stringsAsFactors = F)
+```
+
+**Tidy the data**
+```{r}
+# remove unnecessary variables: 1:7
+training<-training[,-c(1:7)]
+testing<-testing[,-c(1:7)]
+
+# create logical vector to indicate variables that contain all NAs
+varNA<-logical()
+for(i in 1:153){
+    numNAs<-sum(is.na(testing[,i]))
+    if(numNAs==20){varNA[i]<-FALSE}
+    else {varNA[i]<-TRUE}
+}
+
+# apply logical vector to data sets to remove variables that contain all NAs
+training<-training[,varNA]
+testing<-testing[,varNA]
+```
+
+**Split data into training and validation sets**
+```{r warning=FALSE,message=FALSE}
+library(caret)
+set.seed(789)
+inTrain<-createDataPartition(y=training$classe,p=0.5,list=F)
+validate<-training[-inTrain,]
+training<-training[inTrain,]
+```
+
+**Preprocess data using PCA**
+```{r}
+varcors<-round(abs(cor(training[,-53])),3) # correlate variables
+diag(varcors)<-0 # set correlation of variables with themselves to zero
+# sum(varcors>0.7) # number of correlations > 0.7 is 68.
+# It will be helpful to reduce number of predictors using PCA
+
+# use PCA to reduce number of variables by combining correlated predictors
+# keep sufficient components to explain 90% of variance in data.
+# compute rotations using all variables except 'classe'
+preProc<-preProcess(training[,-53], method="pca",thresh=0.9)
+
+# use rotations to compute principal components.
+trainPC<-predict(preProc,training[-53]) 
+testPC<-predict(preProc,testing[-53])
+validPC<-predict(preProc,validate[-53])
+```
+
+**Build Random Forest using training data**
+```{r}
+# create random forest for classification
+beginForest<-Sys.time()
+ForestFit<-train(training$classe~.,data=trainPC, method="rf")
+endForest<-Sys.time()
+ForestTime<-endForest-beginForest # 42 minutes
+```
+
+**Predictions using validation set**
+```{r}
+forestPred<-predict(ForestFit,validPC)
+```
+
+**Model accuracy**
+```{r}
+forestConfuse<-confusionMatrix(validate$classe,forestPred)
+forestConfuse # Accuracy: 0.9617  Kappa: 0.9515
+ForestFit  # view info on model
+# Boostrapped 25 times
+# Best model used 'mtry=2' and was chosen due to its highest accuracy
+```
+
+**Test predictions**
+```{r}
+testPred<-predict(ForestFit,testPC)
+```
+
+**Conclusions**
+Using a Random Forest, the quality of a bicep curl is successfully classified 96%
+of the time, which exceeds the initial success rates reported by Velloso et al. (2013)
+ranging in the 70-80% (http://groupware.les.inf.puc-rio.br/har). However, this method
+has the drawback of being computationally expensive during the training phase.
+Using a laptop computer with 4 GB of memory and a 2-core processor rated at 2 GHz each
+core, it took approximately 42 minutes to build and train the model, and required closure
+of all other programs except RStudio to conserve memory and prevent memory allocation
+problems.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
